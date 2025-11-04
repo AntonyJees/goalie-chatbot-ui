@@ -1,16 +1,30 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import axios from "axios";
+import { Box, Paper, Typography, TextField, IconButton, CircularProgress } from "@mui/material";
+import SendIcon from "@mui/icons-material/Send";
 
 function Chat() {
   const [messages, setMessages] = useState([]);
   const [userMsg, setUserMsg] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  // Auto scroll
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isTyping]);
 
   const sendMessage = async () => {
     if (!userMsg.trim()) return;
 
     const newMsg = { sender: "user", text: userMsg };
-    setMessages([...messages, newMsg]);
+    setMessages((prev) => [...prev, newMsg]);
     setUserMsg("");
+    setIsTyping(true);
 
     try {
       const res = await axios.post("http://localhost:5005/webhooks/rest/webhook", {
@@ -18,60 +32,96 @@ function Chat() {
         message: userMsg,
       });
 
-      const botReplies = res.data.map((r) => ({
-        sender: "bot",
-        text: r.text,
-      }));
-
-      setMessages((prev) => [...prev, ...botReplies]);
+      for (const r of res.data) {
+        await new Promise((resolve) => setTimeout(resolve, 800)); 
+        setMessages((prev) => [...prev, { sender: "bot", text: r.text }]);
+      }
     } catch (error) {
       console.error("Error communicating with Rasa:", error);
       setMessages((prev) => [
         ...prev,
         { sender: "bot", text: "⚠️ Rasa server not reachable." },
       ]);
+    } finally {
+      setIsTyping(false);
     }
   };
 
-  return (
-    <div style={{ maxWidth: 400, margin: "50px auto", fontFamily: "sans-serif" }}>
-      <h2 style={{ textAlign: "center" }}>Goalie Chatbot ⚽</h2>
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter") sendMessage();
+  };
 
-      <div
-        style={{
-          height: 350,
+  return (
+    <Box
+      sx={{
+        maxWidth: 400,
+        mx: "auto",
+        mt: 5,
+        fontFamily: "Roboto, sans-serif",
+      }}
+    >
+      <Typography variant="h5" align="center" gutterBottom>
+        Goalie Chatbot ⚽
+      </Typography>
+
+      <Paper
+        elevation={3}
+        sx={{
+          height: 400,
           overflowY: "auto",
-          border: "1px solid #ddd",
-          borderRadius: "10px",
-          padding: "10px",
-          background: "#fafafa",
+          p: 2,
+          display: "flex",
+          flexDirection: "column",
+          gap: 1,
+          bgcolor: "#f5f5f5",
         }}
       >
         {messages.map((msg, i) => (
-          <div
+          <Box
             key={i}
-            style={{
-              textAlign: msg.sender === "user" ? "right" : "left",
-              margin: "10px 0",
+            sx={{
+              alignSelf: msg.sender === "user" ? "flex-end" : "flex-start",
+              maxWidth: "80%",
+              bgcolor: msg.sender === "user" ? "#1976d2" : "#e0e0e0",
+              color: msg.sender === "user" ? "#fff" : "#000",
+              borderRadius: 2,
+              p: 1.5,
             }}
           >
-            <b>{msg.sender === "user" ? "You" : "Goalie"}:</b> {msg.text}
-          </div>
+            {msg.text.split("\n").map((line, idx) => (
+              <Typography key={idx} variant="body2">
+                {line}
+              </Typography>
+            ))}
+          </Box>
         ))}
-      </div>
 
-      <div style={{ marginTop: 10, display: "flex", gap: "5px" }}>
-        <input
+        {isTyping && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
+            <CircularProgress size={16} />
+            <Typography variant="body2" color="text.secondary">
+              Goalie is typing...
+            </Typography>
+          </Box>
+        )}
+
+        <div ref={messagesEndRef} />
+      </Paper>
+
+      <Box sx={{ display: "flex", mt: 2, gap: 1 }}>
+        <TextField
+          variant="outlined"
+          placeholder="Type a message..."
           value={userMsg}
           onChange={(e) => setUserMsg(e.target.value)}
-          placeholder="Type a message..."
-          style={{ flex: 1, padding: "8px", borderRadius: "5px", border: "1px solid #ccc" }}
+          onKeyDown={handleKeyPress}
+          fullWidth
         />
-        <button onClick={sendMessage} style={{ padding: "8px 15px" }}>
-          Send
-        </button>
-      </div>
-    </div>
+        <IconButton color="primary" onClick={sendMessage}>
+          <SendIcon />
+        </IconButton>
+      </Box>
+    </Box>
   );
 }
 
